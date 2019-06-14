@@ -1,0 +1,2 @@
+project1/hand_analysis
+-DCATKIN_DEVEL_PREFIX=/home/minglun/project1_ws/devel -DCMAKE_INSTALL_PREFIX=/home/minglun/project1_ws/install -G Unix Makefiles

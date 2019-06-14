@@ -1,0 +1,8 @@
+prefix=/home/minglun/project0_ws/install
+
+Name: grasp_clustering
+Description: Description of grasp_clustering
+Version: 0.0.0
+Cflags: -I/home/minglun/project0_ws/install/include
+Libs: -L/home/minglun/project0_ws/install/lib 
+Requires: rospy std_msgs message_runtime

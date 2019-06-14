@@ -1,0 +1,120 @@
+#!/usr/bin/env python
+
+##########################################
+##### WRITE YOUR CODE IN THIS FILE #######
+##########################################
+        
+import rospy
+import numpy as np
+from sklearn.cluster import KMeans
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from hand_analysis.msg import GraspInfo
+
+
+def loadcsvfile():
+    glove = []
+    emg = []
+    file = rospy.get_param("~train_filename")
+    tmp = np.genfromtxt(fname=file, delimiter=",", skip_header=1)
+    for i in range(tmp.shape[0]):
+        glove.append(tmp[i][9:24])
+        emg.append(tmp[i][1:9])
+    glove = np.array(glove)
+    # print(data)
+    return glove, emg
+
+
+class HandAnalysis(object):
+
+    def __init__(self):
+
+        # training data
+        self.glove_data = loadcsvfile()[0]
+        self.emg_data = loadcsvfile()[1]
+        # clustering training
+        self.glove_kmeans = KMeans(n_clusters=6, random_state=0).fit(self.glove_data)
+        self.emg_kmeans = KMeans(n_clusters=6, random_state=0).fit(self.emg_data)
+
+        # linear_regression training
+        self.reg = LinearRegression().fit(self.emg_data, self.glove_data)
+
+        # Subscribe to the topic
+        self.sub = rospy.Subscriber('/grasp_info', GraspInfo, self.callback, queue_size=100)
+
+        # Set up publisher
+        self.pub = rospy.Publisher('/labeled_grasp_info', GraspInfo, queue_size=100)
+
+    def callback(self, info):
+
+        if len(info.glove) == 0:
+            #if len(info.label) == 0:
+            if len(info.emg) == 0:
+                info.glove = self.low_to_glove(self.glove_data, info.glove_low_dim)
+                info.label = self.glove_to_label(info.glove)
+            else:
+                info.label = self.emg_to_label(info.emg)
+                info.glove = self.emg_to_glove(info.emg)
+                if len(info.glove_low_dim) == 0:
+                    info.glove_low_dim = self.glove_to_low(self.glove_data, info.glove)
+        else:
+            #if len(info.label) == 0:
+            info.label = self.glove_to_label(info.glove)
+            if len(info.glove_low_dim) == 0:
+                self.glove_to_low(self.glove_data, info.glove)
+        #print(info)
+        self.pub.publish(info)
+
+    def glove_to_label(self, glove):
+        glove = np.array(glove)
+        glove = glove.reshape(1, -1)
+        label = self.glove_kmeans.predict(glove)
+        return label
+
+    def emg_to_label(self, emg):
+        emg = np.array(emg)
+        emg = emg.reshape(1, -1)
+        label = self.emg_kmeans.predict(emg)
+        return label
+
+    def emg_to_glove(self, emg):
+        emg = np.array(emg)
+        emg = emg.reshape(1, -1)
+        glove = self.reg.predict(emg)
+        glove = glove[0]
+        return glove
+
+    def glove_to_low(self, old_glove, new_glove):
+        #glove = []
+        #print(np.shape(old_glove))
+        new_glove = np.array([new_glove])
+        #print('--------')
+        #print(new_glove)
+        glove = np.concatenate((old_glove, new_glove))
+        #print(glove)
+        # standardise data, but not necessarily I guess
+        scaler = StandardScaler()
+        scaler.fit(glove)
+        data = scaler.transform(glove)
+        # use PCA to do dimensionality reduction
+        pca = PCA(n_components=2)
+        twod = pca.fit_transform(data)
+        target = twod[-1]
+        return target
+
+    def low_to_glove(self, old_glove, low):
+        low = np.array(low)
+        # use PCA to form low data
+        pca = PCA(n_components=2)
+        pca.fit(old_glove)
+        print(low)
+        original = pca.inverse_transform(low)
+        return original
+
+
+if __name__ == '__main__':
+    rospy.init_node('analysis', anonymous=True)
+    ha = HandAnalysis()
+    rospy.spin()
+

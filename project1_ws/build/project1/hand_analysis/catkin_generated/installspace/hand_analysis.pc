@@ -1,0 +1,8 @@
+prefix=/home/minglun/project1_ws/install
+
+Name: hand_analysis
+Description: Description of hand_analysis
+Version: 0.0.0
+Cflags: -I/home/minglun/project1_ws/install/include
+Libs: -L/home/minglun/project1_ws/install/lib 
+Requires: rospy std_msgs message_runtime

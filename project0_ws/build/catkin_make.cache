@@ -1,0 +1,2 @@
+project0/grasp_clustering
+-DCATKIN_DEVEL_PREFIX=/home/minglun/project0_ws/devel -DCMAKE_INSTALL_PREFIX=/home/minglun/project0_ws/install -G Unix Makefiles

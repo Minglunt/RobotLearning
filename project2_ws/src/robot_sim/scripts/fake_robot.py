@@ -1,0 +1,183 @@
+#!/usr/bin/env python
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from torch.utils.data.dataset import Dataset
+from torch.utils.data import DataLoader
+
+from robot_sim.srv import RobotAction
+from robot_sim.srv import RobotActionRequest
+from robot_sim.srv import RobotActionResponse
+
+import rospy
+import numpy
+
+
+def test():
+    ssfeature = []
+    for i in range(2):
+        action = numpy.random.rand(1,3)
+        action[0,0] = (2 * action[0,0] - 1.0) * 1.0
+        action[0,1] = (2 * action[0,1] - 1.0) * 0.5
+        action[0,2] = (2 * action[0,2] - 1.0) * 0.25
+        sfeature = [-1.57, 0, 0, 0, 0, 0, action[0,0], action[0,1], action[0,2]]
+        #print(sfeature)
+        ssfeature.append(sfeature)
+    ssfeature = numpy.array(ssfeature)
+    return ssfeature
+
+
+def get_data(n):
+    # get data set
+    real_robot_action = rospy.ServiceProxy('real_robot', RobotAction)
+    feature = []
+    label = []
+    #print(resp_real)
+    #print('------')
+    for k in range(n):
+        req = RobotActionRequest()
+        req.reset = True
+        resp_real = real_robot_action(req)
+        action = numpy.random.rand(1,3)
+        action[0,0] = (2 * action[0,0] - 1.0) * 1.0
+        action[0,1] = (2 * action[0,1] - 1.0) * 0.5
+        action[0,2] = (2 * action[0,2] - 1.0) * 0.25
+        robsta = resp_real.robot_state
+        robsta = numpy.array(robsta)
+        sfeature = [robsta[0], robsta[1], robsta[2], robsta[3], robsta[4], robsta[5], action[0,0], action[0,1], action[0,2]]
+        for i in range(200):
+            #print(sfeature)
+            req = RobotActionRequest()
+            req.reset = False
+            req.action = action.reshape((3))
+            resp_real = real_robot_action(req)
+            #print(resp_real.robot_state)
+            #print(action)
+        feature.append(sfeature)
+        print(resp_real)
+        label.append(numpy.array(resp_real.robot_state))
+    #print(label)
+    #rospy.spin()
+    return feature, label
+
+
+class MyDataSet(Dataset):
+    def __init__(self, labels, features):
+        super(MyDataSet, self).__init__()
+        self.labels = labels
+        self.features = features
+
+    def __len__(self):
+        return self.features.shape[0]
+
+    def __getitem__(self, idx):
+        feature = self.features[idx]
+        label = self.labels[idx]
+        return {'feature': feature, 'label': label}
+
+
+class MyDNN(nn.Module):
+    def __init__(self, input_dim):
+        super(MyDNN, self).__init__() # find parent of this class
+        self.fc1 = nn.Linear(input_dim, 45)
+        self.fc2 = nn.Linear(45, 30)
+        self.fc3 = nn.Linear(30, 6)
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
+    def predict(self, features):
+        self.eval()
+        features = torch.from_numpy(features).float()
+        return self.forward(features).detach().numpy()
+
+
+class MyDNNTrain(object):
+    def __init__(self, network):
+        self.network = network
+        self.learning_rate = .01
+        self.optimizer = torch.optim.SGD(self.network.parameters(), lr=self.learning_rate)
+        self.criterion = nn.MSELoss()
+        self.num_epochs = 500
+        self.batchsize = 100
+        self.shuffle = True
+
+    def train(self, labels, features):
+        self.network.train()
+        dataset = MyDataSet(labels, features)
+        loader = DataLoader(dataset, shuffle=self.shuffle, batch_size = self.batchsize)
+        for epoch in range(self.num_epochs):
+            self.train_epoch(loader)
+
+    def train_epoch(self, loader):
+        total_loss = 0.0
+        for i, data in enumerate(loader):
+            features = data['feature'].float()
+            labels = data['label'].float()
+            self.optimizer.zero_grad()
+            predictions = self.network(features)
+            loss = self.criterion(predictions, labels)
+            loss.backward()
+            total_loss += loss.item()
+            self.optimizer.step()
+        #print 'loss', total_loss/i
+
+
+def fake_robot_server():
+    rospy.init_node('fake_robot', anonymous=True)
+    s = rospy.Service('fake_robot', RobotAction, callback)
+    #main()
+    rospy.spin()
+
+
+def callback(req):
+    #global ffeature
+    # get test data
+    action = req.action
+    feature = [-1.57, 0, 0, 0, 0, 0, 0, 0, 0]
+    feature = numpy.array(feature)
+    #resp = []
+    action = numpy.array(action)
+    if len(action) != 3:
+        #print('do')
+        feature = numpy.array([-1.57, 0, 0, 0, 0, 0, 0, 0, 0])
+        feature = numpy.array(feature)
+    else:
+        #print(len(action))
+        #resp = numpy.array(resp)
+        feature[6] = action[0]
+        feature[7] = action[1]
+        feature[8] = action[2]
+    prediction = network.predict(feature)
+    #print(ffeature)
+    resp = prediction
+    #print(resp)
+    return RobotActionResponse(resp)
+
+
+def main():
+    global network
+    network = MyDNN(9)
+    trainer = MyDNNTrain(network)
+    features, labels = get_data(200)
+    features = numpy.asarray(features)
+    labels = numpy.asarray(labels)
+    #print(labels)
+    trainer.train(labels, features)
+    #test_feature = test()
+    #print('yes')
+    #print(prediction)
+
+
+if __name__ == '__main__':
+    #global ffeature
+    main()
+    #ffeature = numpy.array([-1.57, 0, 0, 0, 0, 0, 0, 0, 0])
+    #ffeature = numpy.array(ffeature)
+    print('ready')
+    fake_robot_server()
